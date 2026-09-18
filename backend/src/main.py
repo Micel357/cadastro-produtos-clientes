@@ -1,7 +1,11 @@
 import logging
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.clientes.schemas import Client, ClientCreate
 from src.clientes.service import create_client, list_clients, remove_client
@@ -9,17 +13,52 @@ from src.core.config import settings
 from src.core.logger import configure_logger
 from src.produtos.schemas import Product, ProductCreate
 from src.produtos.service import create_product, list_products, remove_product
+from src.servicos.armazenamento import storage
 
 configure_logger()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.app_name, version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    storage.initialize()
+    yield
+
+
+app = FastAPI(title=settings.app_name, version="1.0.0", debug=False, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.allowed_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_: Request, error: RequestValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "Dados inválidos.",
+            "errors": [{"field": ".".join(map(str, issue["loc"])), "message": issue["msg"]} for issue in error.errors()],
+        },
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(_: Request, error: StarletteHTTPException) -> JSONResponse:
+    if error.status_code == status.HTTP_404_NOT_FOUND:
+        detail = "Recurso não encontrado."
+    elif error.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+        detail = "Erro interno do servidor."
+    else:
+        detail = str(error.detail)
+    return JSONResponse(status_code=error.status_code, content={"detail": detail})
+
+
+@app.exception_handler(Exception)
+async def unexpected_error_handler(request: Request, error: Exception) -> JSONResponse:
+    logger.exception("Erro inesperado em %s", request.url.path, exc_info=error)
+    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Erro interno do servidor."})
 
 
 @app.get("/health")

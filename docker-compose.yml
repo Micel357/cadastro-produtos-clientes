@@ -4,6 +4,10 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    environment:
+      DATA_FILE: /app/data/cadastro.json
+    volumes:
+      - cadastro_data:/app/data
     expose:
       - "8000"
 
@@ -12,6 +16,10 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    environment:
+      DATA_FILE: /app/data/cadastro.json
+    volumes:
+      - cadastro_data:/app/data
     expose:
       - "8000"
 
@@ -25,3 +33,6 @@ services:
     restart: unless-stopped
     ports:
       - "8080:80"
+
+volumes:
+  cadastro_data:

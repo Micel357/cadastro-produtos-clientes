@@ -60,13 +60,19 @@ Abra `http://localhost:5173`. Para apontar para outra API, copie `config/.env.ex
 
 ## Executar com alta disponibilidade
 
-Com Docker instalado, esta configuração inicia duas APIs FastAPI e um Nginx que distribui as requisições entre elas:
+Com Docker instalado, esta configuração inicia duas APIs FastAPI, um Nginx que distribui as requisições entre elas e um volume com o arquivo JSON compartilhado:
 
 ```bash
 docker compose up --build
 ```
 
-Abra `http://localhost:8080`. Veja as limitações da versão sem banco de dados em `docs/arquitetura.md`.
+Abra `http://localhost:8080`. Para executar o teste de disponibilidade, que para uma réplica e confirma que a outra continua respondendo, use:
+
+```powershell
+.\scripts\test-docker-availability.ps1
+```
+
+O projeto não utiliza banco de dados; usa `cadastro.json` no volume Docker compartilhado. Veja os limites dessa solução em `docs/arquitetura.md`.
 
 ## Rodar testes a partir da raiz
 

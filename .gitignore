@@ -22,4 +22,5 @@ backend/.venv/
 .env
 *.log
 data/*.json
+data/*.lock
 !data/.gitkeep

@@ -1,23 +1,21 @@
-# Ambiente virtual
-.venv/
-venv/
-
-# Variáveis de ambiente e segredos
-.env
-
-# Cache Python
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.venv/
 
-# Dados locais sensíveis
-/data/*
-!/data/.gitkeep
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
-# Configurações da IDE
-.vscode/
-.idea/
+# Temporary work area used while developing
+work/
 
-# Sistema operacional
-.DS_Store
-Thumbs.db
+# Environment and generated data
+.env
+*.log
+data/*.json
+!data/.gitkeep

@@ -8,6 +8,7 @@ export type Product = {
 };
 
 export type Client = {
+  cpf: string;
   id: number;
   name: string;
   email: string;

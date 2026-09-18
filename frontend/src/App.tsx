@@ -53,7 +53,7 @@ export default function App() {
 
   return (
     <main className="shell">
-      <header><p className="eyebrow">PAPELARIA HORIZONTE</p><h1>Vitrine & Clientes</h1><p>Cadastros simples, rápidos e sem banco de dados.</p></header>
+      <header><p className="eyebrow">PAPELARIA HORIZONTE</p><h1>Vitrine & Clientes</h1><p>Cadastros simples e rápidos.</p></header>
       <DashboardStats dashboard={dashboard} />
       <nav aria-label="Tipo de cadastro"><button className={productsActive ? "active" : ""} onClick={() => setTab("products")}>Produtos</button><button className={!productsActive ? "active" : ""} onClick={() => setTab("clients")}>Clientes</button></nav>
       {message && <p className="message">{message}</p>}

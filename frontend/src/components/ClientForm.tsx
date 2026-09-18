@@ -3,9 +3,16 @@ import type { Client } from "../types";
 
 type Props = { onSave: (client: Omit<Client, "id">) => Promise<void> };
 
-const initial = { name: "", email: "", phone: "", city: "" };
+const initial = { name: "", email: "", phone: "", city: "", cpf: "" };
 
 type FieldName = keyof typeof initial;
+
+export function formatCpf(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  return digits.replace(/^(\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3}\.\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3}\.\d{3}\.\d{3})(\d)/, "$1-$2");
+}
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -17,6 +24,7 @@ function formatPhone(value: string): string {
 
 function validate(form: typeof initial): Partial<Record<FieldName, string>> {
   const errors: Partial<Record<FieldName, string>> = {};
+  if (form.cpf.replace(/\D/g, "").length !== 11) errors.cpf = "Informe os 11 dígitos do CPF.";
   if (form.name.trim().length < 2 || form.name.length > 80) errors.name = "Informe entre 2 e 80 caracteres.";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) || form.email.length > 254) errors.email = "Informe um e-mail válido.";
   if (![10, 11].includes(form.phone.replace(/\D/g, "").length)) errors.phone = "Digite DDD e telefone com 10 ou 11 dígitos.";
@@ -31,7 +39,7 @@ export function ClientForm({ onSave }: Props) {
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
 
   function update(field: FieldName, value: string) {
-    const next = { ...form, [field]: field === "phone" ? formatPhone(value) : value };
+    const next = { ...form, [field]: field === "phone" ? formatPhone(value) : field === "cpf" ? formatCpf(value) : value };
     setForm(next);
     const validation = validate(next);
     setErrors((current) => ({ ...current, [field]: validation[field] }));
@@ -56,6 +64,7 @@ export function ClientForm({ onSave }: Props) {
 
   return (
     <form onSubmit={submit} className="form-grid" noValidate>
+      <label>CPF<input aria-describedby="client-cpf-hint client-cpf-error" aria-invalid={Boolean(errors.cpf)} inputMode="numeric" placeholder="000.000.000-00" required type="text" value={form.cpf} onChange={(e) => update("cpf", e.target.value)} className={errors.cpf ? "field-invalid" : ""} /><small id="client-cpf-hint">Digite os 11 números do CPF. A pontuação é automática.</small>{errors.cpf && <small id="client-cpf-error">{errors.cpf}</small>}</label>
       <label>Nome<input aria-describedby="client-name-error" aria-invalid={Boolean(errors.name)} maxLength={80} minLength={2} required value={form.name} onChange={(e) => update("name", e.target.value)} className={errors.name ? "field-invalid" : ""} />{errors.name && <small id="client-name-error">{errors.name}</small>}</label>
       <label>E-mail<input aria-describedby="client-email-error" aria-invalid={Boolean(errors.email)} maxLength={254} required type="email" value={form.email} onChange={(e) => update("email", e.target.value)} className={errors.email ? "field-invalid" : ""} />{errors.email && <small id="client-email-error">{errors.email}</small>}</label>
       <label>Telefone<input aria-describedby="client-phone-error" aria-invalid={Boolean(errors.phone)} inputMode="numeric" maxLength={15} placeholder="(85) 99999-9999" required type="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} className={errors.phone ? "field-invalid" : ""} />{errors.phone && <small id="client-phone-error">{errors.phone}</small>}</label>

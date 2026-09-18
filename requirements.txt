@@ -1,0 +1,1 @@
+# Dependências do projeto serão adicionadas conforme a implementação evoluir.

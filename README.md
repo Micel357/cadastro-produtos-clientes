@@ -4,7 +4,7 @@ Aplicação full stack para cadastro de produtos e clientes de uma pequena loja 
 
 ## Tecnologias escolhidas
 
-- **Front-end:** React + TypeScript + Vite. React é mais simples de aprender e configurar do que Angular para este CRUD pequeno.
+- **Front-end:** React + TypeScript + Vite. React para este CRUD pequeno.
 - **Back-end:** Python + FastAPI. A API fica curta, tipada e organizada em módulos por domínio.
 
 ## Estrutura

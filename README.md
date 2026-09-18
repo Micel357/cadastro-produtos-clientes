@@ -24,6 +24,7 @@ cadastro-produtos-clientes/
 ├── config/                 # Exemplos de configuração
 ├── data/                   # Dados locais opcionais (não usados como banco)
 ├── docs/                   # Documentação
+├── deployment/nginx/        # Balanceador de carga Nginx
 ├── frontend/
 │   └── src/
 │       ├── components/     # Componentes de interface
@@ -56,6 +57,26 @@ npm run dev
 ```
 
 Abra `http://localhost:5173`. Para apontar para outra API, copie `config/.env.example` para `frontend/.env` e ajuste `VITE_API_URL`.
+
+## Executar com alta disponibilidade
+
+Com Docker instalado, esta configuração inicia duas APIs FastAPI e um Nginx que distribui as requisições entre elas:
+
+```bash
+docker compose up --build
+```
+
+Abra `http://localhost:8080`. Veja as limitações da versão sem banco de dados em `docs/arquitetura.md`.
+
+## Rodar testes a partir da raiz
+
+Depois de instalar as dependências Python em `backend/.venv`, execute na raiz do repositório:
+
+```bash
+backend\\.venv\\Scripts\\python -m pytest
+```
+
+O `pytest.ini` adiciona `backend` ao caminho de importação e procura os testes em `backend/tests`.
 
 ## Rotas da API
 

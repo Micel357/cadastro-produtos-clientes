@@ -1,0 +1,27 @@
+services:
+  api-1:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8000"
+
+  api-2:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8000"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      - api-1
+      - api-2
+    restart: unless-stopped
+    ports:
+      - "8080:80"

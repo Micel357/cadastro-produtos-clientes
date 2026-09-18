@@ -14,6 +14,10 @@ frontend/vite.config.d.ts
 # Temporary work area used while developing
 work/
 
+# Docker build context
+.git
+backend/.venv/
+
 # Environment and generated data
 .env
 *.log

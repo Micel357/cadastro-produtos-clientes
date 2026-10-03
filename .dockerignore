@@ -1,0 +1,13 @@
+.git
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+data/*.json
+data/*.lock
+**/*.log

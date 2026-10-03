@@ -32,7 +32,7 @@ class Database:
         if owner != self.identity.owner_id:
             raise ValueError("Registro fora do escopo da sessão.")
         return Client(id=row["id"], name=row["name"], city=row["city"], **{
-            field: self.cipher.decrypt(row[f"{field}_encrypted"], owner, field) if row.get(f"{field}_encrypted") else ""
+            field: self.cipher.decrypt(row[f"{field}_encrypted"], owner, field)
             for field in ("cpf", "email", "phone")
         })
 

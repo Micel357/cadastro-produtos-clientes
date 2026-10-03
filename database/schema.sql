@@ -38,8 +38,8 @@ create table public.clients (
   owner_id uuid not null references auth.users(id),
   name varchar(80) not null check (length(btrim(name)) >= 2),
   city varchar(60) not null check (length(btrim(city)) >= 2),
-  cpf_encrypted text check (cpf_encrypted like 'v1:%'),
-  cpf_bindex varchar(64) check (cpf_bindex ~ '^[0-9a-f]{64}$'),
+  cpf_encrypted text not null check (cpf_encrypted like 'v1:%'),
+  cpf_bindex varchar(64) not null check (cpf_bindex ~ '^[0-9a-f]{64}$'),
   cpf_masked varchar(20) not null default '',
   email_encrypted text not null check (email_encrypted like 'v1:%'),
   email_bindex varchar(64) not null check (email_bindex ~ '^[0-9a-f]{64}$'),
@@ -47,7 +47,6 @@ create table public.clients (
   phone_encrypted text not null check (phone_encrypted like 'v1:%'),
   phone_masked varchar(20) not null,
   created_at timestamptz not null default now(),
-  constraint clients_cpf_pair check ((cpf_encrypted is null) = (cpf_bindex is null)),
   constraint clients_owner_cpf_unique unique (owner_id, cpf_bindex)
 );
 -- UNIQUE já fornece o índice de CPF: não cria um B-Tree duplicado como no PDF.

@@ -31,6 +31,9 @@ dos tokens. A FastAPI consulta `/auth/v1/user`; não confia em JWT decodificado 
 validação. Cookies HttpOnly ficam limitados a `/api` e `/api/auth`, com Secure em
 produção e SameSite=Lax. Operações com cookies verificam a origem contra uma lista
 explícita; o frontend não guarda tokens em localStorage.
+No modo de produção, chamadas HTTP à API são recusadas. O proxy deve terminar TLS
+e ser explicitamente confiável pelo Uvicorn. Logout sempre apaga os cookies locais;
+se a revogação remota falhar, registra a falha sem revelar tokens.
 
 Todo usuário possui um escopo de dados por padrão: seu próprio UUID. Um administrador
 pode configurar `app_metadata`:

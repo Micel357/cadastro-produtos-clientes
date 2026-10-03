@@ -74,6 +74,8 @@ ele verifica a continuidade do gateway, não a disponibilidade do Supabase.
   O Compose é um exemplo local, não um terminador TLS de produção.
 - Configure `COOKIE_SECURE=true` e `ALLOWED_ORIGINS=https://seu-dominio`.
   Cookies são HttpOnly, SameSite=Lax e não ficam em localStorage.
+  A API recusa HTTP nesse modo. Configure `FORWARDED_ALLOW_IPS` no Uvicorn com os
+  proxies confiáveis do seu provedor para reconhecer a terminação TLS corretamente.
 - Armazene segredos no provedor de hospedagem. `render.yaml` lista as variáveis
   necessárias; aplicar o banco não configura automaticamente um serviço Render existente.
 - O tráfego API → Supabase exige HTTPS com validação de certificado.
@@ -85,6 +87,8 @@ ele verifica a continuidade do gateway, não a disponibilidade do Supabase.
 A aplicação não volta ao JSON se o banco ficar indisponível e não insere exemplos
 automaticamente. Nenhum arquivo `cadastro.json` real acompanha o repositório.
 Preserve o volume/arquivo antigo até concluir a transferência dos seus cadastros.
+Clientes antigos sem CPF precisam desse campo preenchido antes de serem cadastrados
+na nova API. Não invente CPFs nem transfira os exemplos como clientes reais.
 Não execute `docker compose down -v` no ambiente antigo antes de fazer backup.
 A API continua usando IDs numéricos; os IDs são gerados pelo PostgreSQL.
 

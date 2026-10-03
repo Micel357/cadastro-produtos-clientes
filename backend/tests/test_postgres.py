@@ -132,9 +132,6 @@ class PostgresSecurityTests(unittest.TestCase):
             self.insert_product(self.connection)
             self.insert_product(self.connection)
         self.connection.execute("ALTER TABLE cadastro_private.audit_ledger DISABLE TRIGGER audit_no_mutation")
-        with self.connection.transaction(force_rollback=True):
-            self.connection.execute("UPDATE cadastro_private.audit_ledger SET details = '{\"forged\": true}' WHERE id = 1")
-            # verify_ledger requires its own top-level snapshot, so verify after committed tamper below.
         self.connection.execute("UPDATE cadastro_private.audit_ledger SET action='forged' WHERE id=1")
         with self.assertRaises(ValueError):
             verify_ledger(self.connection)

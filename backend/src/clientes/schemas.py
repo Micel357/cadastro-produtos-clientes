@@ -25,5 +25,5 @@ class Client(BaseModel):
     email: str
     phone: str
     city: str
-    # Respostas aceitam dados mascarados e CPF vazio em importações legadas.
-    cpf: str = ""
+    # O contrato de leitura também aceita máscaras para o perfil de suporte.
+    cpf: str

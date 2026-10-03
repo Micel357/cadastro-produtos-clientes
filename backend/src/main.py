@@ -92,10 +92,15 @@ def create_app(config: Settings | None = None, transport: httpx.BaseTransport | 
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
+        settings = request.app.state.settings
+        if settings.secure_cookies and request.url.path.startswith("/api") and request.url.scheme != "https":
+            return JSONResponse(status_code=400, content={"detail": "Use HTTPS para acessar a API."}, headers={"Cache-Control": "no-store"})
         response = await call_next(request)
         if request.url.path.startswith("/api"):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
+        if settings.secure_cookies and request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
 
     @app.exception_handler(RequestValidationError)
@@ -141,13 +146,14 @@ def create_app(config: Settings | None = None, transport: httpx.BaseTransport | 
     @app.post("/api/auth/logout", dependencies=[Depends(require_origin)])
     def logout(request: Request):
         response = Response(status_code=204)
-        token = request.cookies.get(ACCESS_COOKIE)
+        authorization = request.headers.get("Authorization", "")
+        token = authorization[7:] if authorization.startswith("Bearer ") else request.cookies.get(ACCESS_COOKIE)
         if token:
             try:
                 SupabaseGateway(request.app.state.settings, request.app.state.http, token).request("POST", "/auth/v1/logout", params={"scope": "local"})
             except HTTPException as error:
                 if error.status_code != 401:
-                    raise
+                    logger.warning("Sessão local encerrada; revogação remota indisponível (%s).", error.status_code)
         clear_session(response, request.app.state.settings.secure_cookies)
         return response
 

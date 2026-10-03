@@ -26,6 +26,7 @@ class FakeProvider:
         self.requests = []
         self.role = "operator"
         self.failure = None
+        self.logout_failure = False
         self.user_metadata = {}
 
     def __call__(self, request):
@@ -35,7 +36,7 @@ class FakeProvider:
         if path == "/auth/v1/token":
             return httpx.Response(200, json={"access_token": "valid", "refresh_token": "refresh", "expires_in": 3600})
         if path == "/auth/v1/logout":
-            return httpx.Response(204)
+            return httpx.Response(503) if self.logout_failure else httpx.Response(204)
         if path == "/auth/v1/user":
             if token != "Bearer valid":
                 return httpx.Response(401, json={"message": "expired"})
@@ -119,6 +120,19 @@ class ApiSecurityTests(unittest.TestCase):
             if req.url.path.startswith("/rest/"):
                 self.assertEqual(req.headers["authorization"], "Bearer valid")
                 self.assertNotIn("01234567890", str(req.url))
+
+    def test_production_rejects_http_before_processing_credentials(self):
+        with TestClient(create_app(CONFIG, httpx.MockTransport(self.provider)), base_url="http://testserver") as insecure:
+            result = insecure.post("/api/auth/login", json={"email": "owner@example.com", "password": "test"}, headers={"Origin": "https://testserver"})
+            self.assertEqual(result.status_code, 400)
+            self.assertEqual(self.provider.requests, [])
+
+    def test_logout_clears_local_cookies_even_when_auth_is_unavailable(self):
+        self.client.headers["Origin"] = "https://testserver"
+        self.client.post("/api/auth/login", json={"email": "owner@example.com", "password": "test"})
+        self.provider.logout_failure = True
+        self.assertEqual(self.client.post("/api/auth/logout").status_code, 204)
+        self.assertEqual(self.client.get("/api/auth/session").status_code, 401)
 
     def test_pagination_and_shared_persistence_across_api_instances(self):
         self.authenticated()

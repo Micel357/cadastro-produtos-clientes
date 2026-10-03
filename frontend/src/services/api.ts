@@ -1,22 +1,38 @@
-import type { Client, Dashboard, Product } from "../types";
+import type { Client, Dashboard, Product, Session } from "../types";
 
-const baseUrl = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+let refreshing: Promise<boolean> | null = null;
+async function renew(): Promise<boolean> {
+  if (!refreshing) {
+    refreshing = fetch(`${baseUrl}/api/auth/refresh`, { method: "POST", credentials: "include" })
+      .then(response => response.ok).catch(() => false).finally(() => { refreshing = null; });
+  }
+  return refreshing;
+}
+
+async function request<T>(path: string, options?: RequestInit, retry = true): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
     ...options,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...options?.headers },
   });
-
+  if (response.status === 401 && retry && await renew()) return request<T>(path, options, false);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail ?? "Não foi possível concluir a operação.");
+    throw new ApiError(body.detail ?? "Não foi possível concluir a operação.", response.status);
   }
-
   return response.status === 204 ? (undefined as T) : response.json() as Promise<T>;
 }
 
 export const api = {
+  session: () => request<Session>("/api/auth/session"),
+  login: (email: string, password: string) => request<Session>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, false),
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }, false),
   dashboard: () => request<Dashboard>("/api/dashboard"),
   products: () => request<Product[]>("/api/products"),
   clients: () => request<Client[]>("/api/clients"),

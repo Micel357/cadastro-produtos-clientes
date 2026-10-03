@@ -4,7 +4,7 @@ WORKDIR /app
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile
 COPY frontend ./
-ARG VITE_API_URL=/api
+ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 RUN pnpm run build
 

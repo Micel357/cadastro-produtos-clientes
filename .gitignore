@@ -20,6 +20,12 @@ backend/.venv/
 
 # Environment and generated data
 .env
+.env.*
+!.env.example
+config/*.env
+*.pem
+*.key
+audit-checkpoint*.json
 *.log
 data/*.json
 data/*.lock

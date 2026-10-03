@@ -1,38 +1,20 @@
+x-api: &api
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  restart: unless-stopped
+  env_file: .env
+  expose: ["8000"]
+
 services:
   api-1:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: unless-stopped
-    environment:
-      DATA_FILE: /app/data/cadastro.json
-    volumes:
-      - cadastro_data:/app/data
-    expose:
-      - "8000"
-
+    <<: *api
   api-2:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    restart: unless-stopped
-    environment:
-      DATA_FILE: /app/data/cadastro.json
-    volumes:
-      - cadastro_data:/app/data
-    expose:
-      - "8000"
-
+    <<: *api
   gateway:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    depends_on:
-      - api-1
-      - api-2
+    depends_on: [api-1, api-2]
     restart: unless-stopped
-    ports:
-      - "8080:80"
-
-volumes:
-  cadastro_data:
+    ports: ["127.0.0.1:8080:80"]

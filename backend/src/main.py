@@ -1,113 +1,200 @@
+"""API autenticada, sem estado de cadastros ou sessões nas réplicas."""
+
 import logging
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, status
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, EmailStr, Field, SecretStr
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.clientes.schemas import Client, ClientCreate
-from src.clientes.service import create_client, list_clients, remove_client
-from src.core.config import settings
-from src.core.logger import configure_logger
+from src.core.config import Settings
+from src.core.crypto import FieldCipher
+from src.core.supabase import Identity, SupabaseGateway
 from src.produtos.schemas import Product, ProductCreate
-from src.produtos.service import create_product, list_products, remove_product
-from src.servicos.armazenamento import storage
+from src.servicos.database import Database
 
-configure_logger()
 logger = logging.getLogger(__name__)
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    storage.initialize()
-    yield
+ACCESS_COOKIE = "cadastro_access"
+REFRESH_COOKIE = "cadastro_refresh"
 
 
-app = FastAPI(title=settings.app_name, version="1.0.0", debug=False, lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(settings.allowed_origins),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+class Login(BaseModel):
+    email: EmailStr
+    password: SecretStr = Field(min_length=1, max_length=1024)
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_error_handler(_: Request, error: RequestValidationError) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": "Dados inválidos.",
-            "errors": [{"field": ".".join(map(str, issue["loc"])), "message": issue["msg"]} for issue in error.errors()],
-        },
-    )
+class ClientSearch(BaseModel):
+    cpf: str
+
+    def normalized(self) -> str:
+        return ClientCreate.normalize_cpf(self.cpf)
 
 
-@app.exception_handler(StarletteHTTPException)
-async def http_error_handler(_: Request, error: StarletteHTTPException) -> JSONResponse:
-    if error.status_code == status.HTTP_404_NOT_FOUND:
-        detail = "Recurso não encontrado."
-    elif error.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
-        detail = "Erro interno do servidor."
-    else:
-        detail = str(error.detail)
-    return JSONResponse(status_code=error.status_code, content={"detail": detail})
+def gateway(request: Request) -> SupabaseGateway:
+    authorization = request.headers.get("Authorization", "")
+    token = authorization[7:] if authorization.startswith("Bearer ") else request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        raise HTTPException(401, "Entre na sua conta para continuar.")
+    return SupabaseGateway(request.app.state.settings, request.app.state.http, token)
 
 
-@app.exception_handler(Exception)
-async def unexpected_error_handler(request: Request, error: Exception) -> JSONResponse:
-    logger.exception("Erro inesperado em %s", request.url.path, exc_info=error)
-    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Erro interno do servidor."})
+def current_identity(remote: SupabaseGateway = Depends(gateway)) -> Identity:
+    return remote.identity()
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def database(request: Request, identity: Identity = Depends(current_identity), remote: SupabaseGateway = Depends(gateway)) -> Database:
+    return Database(remote, identity, request.app.state.cipher)
 
 
-@app.get("/api/dashboard")
-def dashboard() -> dict[str, int | float]:
-    products = list_products()
-    return {
-        "products": len(products),
-        "clients": len(list_clients()),
-        "stock": sum(product.stock for product in products),
-        "inventory_value": round(sum(product.price * product.stock for product in products), 2),
-    }
+def writer(db: Database = Depends(database)) -> Database:
+    if db.identity.access_role != "operator":
+        raise HTTPException(403, "Seu perfil permite apenas consultar os cadastros.")
+    return db
 
 
-@app.get("/api/products", response_model=list[Product])
-def get_products() -> list[Product]:
-    return list_products()
+def require_origin(request: Request) -> None:
+    # Clientes CLI podem usar Bearer; cookies do navegador exigem Origin explícita.
+    if request.headers.get("Authorization", "").startswith("Bearer "):
+        return
+    if request.headers.get("Origin") not in request.app.state.settings.allowed_origins:
+        raise HTTPException(403, "Origem da requisição não permitida.")
 
 
-@app.post("/api/products", response_model=Product, status_code=status.HTTP_201_CREATED)
-def post_product(payload: ProductCreate) -> Product:
-    product = create_product(payload)
-    logger.info("Produto cadastrado: %s", product.id)
-    return product
+def clear_session(response: Response, secure: bool) -> None:
+    response.delete_cookie(ACCESS_COOKIE, path="/api", secure=secure, httponly=True, samesite="lax")
+    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", secure=secure, httponly=True, samesite="lax")
 
 
-@app.delete("/api/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_product(product_id: int) -> None:
-    if not remove_product(product_id):
-        raise HTTPException(status_code=404, detail="Produto não encontrado.")
+def set_session(response: Response, session: dict, secure: bool) -> None:
+    response.set_cookie(ACCESS_COOKIE, session["access_token"], max_age=int(session["expires_in"]), path="/api", secure=secure, httponly=True, samesite="lax")
+    response.set_cookie(REFRESH_COOKIE, session["refresh_token"], max_age=7 * 86400, path="/api/auth", secure=secure, httponly=True, samesite="lax")
 
 
-@app.get("/api/clients", response_model=list[Client])
-def get_clients() -> list[Client]:
-    return list_clients()
+def create_app(config: Settings | None = None, transport: httpx.BaseTransport | None = None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        settings = config or Settings.from_env()
+        app.state.settings = settings
+        app.state.cipher = FieldCipher(settings.encryption_key, settings.blind_index_key)
+        with httpx.Client(timeout=10, limits=httpx.Limits(max_connections=30, max_keepalive_connections=10), transport=transport) as client:
+            app.state.http = client
+            yield
+
+    app = FastAPI(title="Vitrine & Clientes API", version="2.0.0", debug=False, lifespan=lifespan)
+    origins = config.allowed_origins if config else tuple(x.strip().rstrip("/") for x in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:8080").split(",") if x.strip())
+    app.add_middleware(CORSMiddleware, allow_origins=list(origins), allow_credentials=True, allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type", "Authorization"])
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api"):
+            response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(_: Request, error: RequestValidationError):
+        return JSONResponse(status_code=422, content={"detail": "Dados inválidos.", "errors": [{"field": ".".join(map(str, issue["loc"])), "message": issue["msg"]} for issue in error.errors()]})
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, error: StarletteHTTPException):
+        detail = "Recurso não encontrado." if error.status_code == 404 else str(error.detail)
+        response = JSONResponse(status_code=error.status_code, content={"detail": detail})
+        if error.status_code == 401 and request.url.path == "/api/auth/refresh":
+            clear_session(response, request.app.state.settings.secure_cookies)
+        return response
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request: Request, error: Exception):
+        logger.error("Falha %s em %s", type(error).__name__, request.url.path)
+        return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor."})
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+    @app.post("/api/auth/login", dependencies=[Depends(require_origin)])
+    def login(payload: Login, request: Request, response: Response):
+        remote = SupabaseGateway(request.app.state.settings, request.app.state.http)
+        session = remote.request("POST", "/auth/v1/token", params={"grant_type": "password"}, json={"email": str(payload.email), "password": payload.password.get_secret_value()})
+        remote.token = session["access_token"]
+        user = remote.identity()
+        set_session(response, session, request.app.state.settings.secure_cookies)
+        return {"email": user.email, "access_role": user.access_role}
+
+    @app.post("/api/auth/refresh", dependencies=[Depends(require_origin)])
+    def refresh(request: Request, response: Response):
+        refresh_token = request.cookies.get(REFRESH_COOKIE)
+        if not refresh_token:
+            raise HTTPException(401, "Sessão expirada. Entre novamente.")
+        remote = SupabaseGateway(request.app.state.settings, request.app.state.http)
+        session = remote.request("POST", "/auth/v1/token", params={"grant_type": "refresh_token"}, json={"refresh_token": refresh_token})
+        set_session(response, session, request.app.state.settings.secure_cookies)
+        return {"status": "ok"}
+
+    @app.post("/api/auth/logout", dependencies=[Depends(require_origin)])
+    def logout(request: Request):
+        response = Response(status_code=204)
+        token = request.cookies.get(ACCESS_COOKIE)
+        if token:
+            try:
+                SupabaseGateway(request.app.state.settings, request.app.state.http, token).request("POST", "/auth/v1/logout", params={"scope": "local"})
+            except HTTPException as error:
+                if error.status_code != 401:
+                    raise
+        clear_session(response, request.app.state.settings.secure_cookies)
+        return response
+
+    @app.get("/api/auth/session")
+    def session(identity: Identity = Depends(current_identity)):
+        return {"email": identity.email, "access_role": identity.access_role}
+
+    @app.get("/api/dashboard")
+    def dashboard(db: Database = Depends(database)):
+        return db.dashboard()
+
+    @app.get("/api/products", response_model=list[Product])
+    def products(db: Database = Depends(database)):
+        return db.list_products()
+
+    @app.post("/api/products", response_model=Product, status_code=201, dependencies=[Depends(require_origin)])
+    def add_product(payload: ProductCreate, db: Database = Depends(writer)):
+        return db.create_product(payload)
+
+    @app.delete("/api/products/{row_id}", status_code=204, dependencies=[Depends(require_origin)])
+    def remove_product(row_id: int, db: Database = Depends(writer)):
+        if not db.remove("products", row_id):
+            raise HTTPException(404)
+
+    @app.get("/api/clients", response_model=list[Client])
+    def clients(db: Database = Depends(database)):
+        return db.list_clients()
+
+    @app.post("/api/clients", response_model=Client, status_code=201, dependencies=[Depends(require_origin)])
+    def add_client(payload: ClientCreate, db: Database = Depends(writer)):
+        return db.create_client(payload)
+
+    @app.post("/api/clients/search", response_model=list[Client], dependencies=[Depends(require_origin)])
+    def find_client(payload: ClientSearch, db: Database = Depends(writer)):
+        try:
+            cpf = payload.normalized()
+        except ValueError as error:
+            raise HTTPException(422, "Informe um CPF com 11 dígitos.") from error
+        index = db.cipher.blind_index(cpf, db.identity.owner_id, "cpf")
+        return db.list_clients({"cpf_bindex": f"eq.{index}"})
+
+    @app.delete("/api/clients/{row_id}", status_code=204, dependencies=[Depends(require_origin)])
+    def remove_client(row_id: int, db: Database = Depends(writer)):
+        if not db.remove("clients", row_id):
+            raise HTTPException(404)
+
+    return app
 
 
-@app.post("/api/clients", response_model=Client, status_code=status.HTTP_201_CREATED)
-def post_client(payload: ClientCreate) -> Client:
-    client = create_client(payload)
-    logger.info("Cliente cadastrado: %s", client.id)
-    return client
-
-
-@app.delete("/api/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_client(client_id: int) -> None:
-    if not remove_client(client_id):
-        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+app = create_app()

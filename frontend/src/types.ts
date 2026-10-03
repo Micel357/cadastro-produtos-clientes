@@ -22,3 +22,5 @@ export type Dashboard = {
   stock: number;
   inventory_value: number;
 };
+export type Session = { email: string; access_role: "operator" | "support" };
+

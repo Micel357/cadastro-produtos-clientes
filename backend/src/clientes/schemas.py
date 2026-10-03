@@ -1,9 +1,10 @@
 import re
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class ClientCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     cpf: str
     name: str = Field(min_length=2, max_length=80)
     email: EmailStr
@@ -18,7 +19,11 @@ class ClientCreate(BaseModel):
         return value.replace(".", "").replace("-", "")
 
 
-class Client(ClientCreate):
+class Client(BaseModel):
     id: int
-    # Cadastros anteriores à inclusão do CPF continuam disponíveis para leitura.
+    name: str
+    email: str
+    phone: str
+    city: str
+    # Respostas aceitam dados mascarados e CPF vazio em importações legadas.
     cpf: str = ""

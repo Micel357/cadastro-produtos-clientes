@@ -1,1 +1,1 @@
-"""Serviços técnicos da aplicação."""
+"""Persistência compartilhada no Supabase."""
